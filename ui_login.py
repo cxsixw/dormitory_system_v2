@@ -303,7 +303,7 @@ def login():
     password_input.clear()
     window.hide()
 
-    ui_student.show_main_window(student)
+    ui_student.show_main_window(student, back_to_login_after_logout)
 
 
 # ============================================================
@@ -478,3 +478,17 @@ def back_to_login_from_signup():
 
     password_input.clear()
     window.show()
+
+
+# ============================================================
+# 로그아웃 → 로그인 화면 (학생 화면에서 호출)
+# ============================================================
+
+def back_to_login_after_logout():
+
+    id_input.clear()
+    password_input.clear()
+
+    window.show()
+
+    id_input.setFocus()

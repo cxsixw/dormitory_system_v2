@@ -20,7 +20,8 @@ from PySide6.QtWidgets import (
     QLineEdit,
 )
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QObject, QEvent, QTimer
+from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QFont
 
 from styles import APP_STYLE
@@ -36,18 +37,129 @@ from db import DBError
 # 예: {"student_id": "202511217", "name": "홍길동", "email": "a@b.com"}
 current_student = None
 
+# 로그아웃 후 로그인 화면으로 돌아가는 함수 (ui_login 에서 넘겨줌)
+logout_callback = None
+
+# 자동 로그아웃 시간 (초) - 시연할 때는 10 정도로 줄여서 보여주면 편함
+AUTO_LOGOUT_SECONDS = 10
+
+
+# ============================================================
+# 자동 로그아웃
+# 마우스 클릭/이동, 키보드 입력, 스크롤이 있을 때마다 타이머를 처음부터 다시 셈.
+# 정해진 시간 동안 아무 입력이 없으면 자동으로 로그아웃한다.
+# (공용 휴게실 PC에서 다음 사람이 앞사람 계정을 쓰지 않도록)
+# ============================================================
+
+ACTIVITY_EVENTS = (
+    QEvent.Type.MouseButtonPress,
+    QEvent.Type.MouseMove,
+    QEvent.Type.KeyPress,
+    QEvent.Type.Wheel,
+)
+
+
+class ActivityWatcher(QObject):
+
+    def eventFilter(self, watched, event):
+
+        if event.type() in ACTIVITY_EVENTS and idle_timer.isActive():
+            idle_timer.start()   # 다시 처음부터 셈
+
+        return False   # 원래 하던 동작은 그대로 진행
+
+
+idle_timer = None
+activity_watcher = None
+
+
+def start_idle_timer():
+
+    global idle_timer
+    global activity_watcher
+
+    if idle_timer is None:
+
+        idle_timer = QTimer()
+        idle_timer.setSingleShot(True)
+        idle_timer.timeout.connect(auto_logout)
+
+        activity_watcher = ActivityWatcher()
+        QApplication.instance().installEventFilter(activity_watcher)
+
+    idle_timer.setInterval(AUTO_LOGOUT_SECONDS * 1000)
+    idle_timer.start()
+
+
+def auto_logout():
+
+    if current_student is None:
+        return
+
+    logout()
+
+    if AUTO_LOGOUT_SECONDS >= 60:
+        idle_text = f"{AUTO_LOGOUT_SECONDS // 60}분"
+    else:
+        idle_text = f"{AUTO_LOGOUT_SECONDS}초"
+
+    QMessageBox.information(
+        None,
+        "자동 로그아웃",
+        f"{idle_text} 동안 사용하지 않아 자동으로 로그아웃되었습니다."
+    )
+
+
+# ============================================================
+# 로그아웃 : 열려 있는 학생 화면을 모두 닫고 로그인 화면으로
+# ============================================================
+
+def logout():
+
+    global current_student
+
+    current_student = None
+
+    if idle_timer is not None:
+        idle_timer.stop()
+
+    # 열려 있는 창(상세 보기, 비밀번호 변경, 알림창 등) 닫기
+    for _ in range(10):
+
+        modal = QApplication.activeModalWidget()
+
+        if modal is None:
+            break
+
+        modal.close()
+
+    for name in ["report_window", "history_window", "info_window", "main_window"]:
+
+        window = globals().get(name)
+
+        if window is not None:
+            window.close()
+
+    if logout_callback is not None:
+        logout_callback()
+
 
 # ============================================================
 # 학생 메인 화면
 # ============================================================
 
-def show_main_window(student):
+def show_main_window(student, on_logout=None):
 
     global main_window
     global current_student
+    global logout_callback
 
     # 로그인에 성공한 학생 정보 저장
     current_student = student
+    logout_callback = on_logout
+
+    # 자동 로그아웃 타이머 시작
+    start_idle_timer()
 
     main_window = QWidget()
     main_window.setWindowTitle("기숙사 시설 관리 시스템")
@@ -77,7 +189,18 @@ def show_main_window(student):
     header_layout.addWidget(title)
     header_layout.addWidget(student_label)
 
-    header.setLayout(header_layout)
+    # 로그아웃 버튼 (오른쪽 위)
+    logout_button = QPushButton("로그아웃")
+    logout_button.setObjectName("backButton")
+    logout_button.clicked.connect(logout)
+
+    header_row = QHBoxLayout()
+    header_row.setContentsMargins(0, 0, 18, 0)
+    header_row.addLayout(header_layout)
+    header_row.addStretch()
+    header_row.addWidget(logout_button)
+
+    header.setLayout(header_row)
 
     layout.addWidget(header)
 
@@ -688,7 +811,10 @@ def update_photo_label():
 def back_to_main_from_report():
 
     report_window.close()
-    main_window.show()
+
+    # 자동 로그아웃된 뒤라면 메인 화면을 다시 열지 않음
+    if current_student is not None:
+        main_window.show()
 
 
 # ============================================================
@@ -875,7 +1001,10 @@ def open_my_complaint(item):
 def back_to_main_from_history():
 
     history_window.close()
-    main_window.show()
+
+    # 자동 로그아웃된 뒤라면 메인 화면을 다시 열지 않음
+    if current_student is not None:
+        main_window.show()
 
 
 # ============================================================
@@ -1196,4 +1325,7 @@ def show_password_dialog():
 def back_to_main_from_info():
 
     info_window.close()
-    main_window.show()
+
+    # 자동 로그아웃된 뒤라면 메인 화면을 다시 열지 않음
+    if current_student is not None:
+        main_window.show()
