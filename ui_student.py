@@ -41,7 +41,7 @@ current_student = None
 logout_callback = None
 
 # 자동 로그아웃 시간 (초) - 시연할 때는 10 정도로 줄여서 보여주면 편함
-AUTO_LOGOUT_SECONDS = 10
+AUTO_LOGOUT_SECONDS = 180
 
 
 # ============================================================
